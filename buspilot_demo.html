@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>BusPilot · Demo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#0b1220;--panel:#121d2e;--panel2:#18263a;--text:#f4f7fb;--muted:#a9b8cb;--blue:#43a5ff;--line:#26374e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:18px 16px 12px;background:linear-gradient(135deg,#111c2d,#172d48);border-bottom:1px solid var(--line)}
+.brand{font-size:25px;font-weight:800;letter-spacing:-.5px}.brand span{color:var(--blue)}.sub{color:var(--muted);font-size:13px;margin-top:4px}
+main{padding:14px;max-width:850px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+h2{font-size:16px;margin:0 0 10px}p{color:var(--muted);font-size:13px;line-height:1.45}
+button,.button{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:12px 14px;background:var(--blue);color:#071322;font-weight:750;font-size:15px;cursor:pointer;text-decoration:none}
+button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #34465e;background:#0b1422;color:var(--text);font-size:16px;margin:6px 0 10px}
+label{font-size:13px;color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}
+.status{font-size:13px;color:var(--muted);padding:8px 0}.status.ok{color:#8ce6bd}.status.err{color:#ffb1a9}
+#map{height:360px;border-radius:13px;background:#1a2635;overflow:hidden}
+#stops{padding-left:22px;margin:8px 0 0}#stops li{padding:5px 0;color:#e4edf8;font-size:14px}
+.small{font-size:12px;color:var(--muted)}.pill{display:inline-block;background:#20334b;border-radius:99px;padding:5px 9px;font-size:12px;color:#b8dfff}
+footer{padding:6px 16px 28px;color:var(--muted);font-size:12px;line-height:1.5;max-width:850px;margin:auto}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header><div class="brand">Bus<span>Pilot</span></div><div class="sub">Demo 0.1 · Esplora una linea del trasporto pubblico di Roma</div></header>
+<main>
+<section class="card">
+<h2>1 · Carica i dati ufficiali</h2>
+<p>Scarica il file GTFS ZIP dal sito di Roma Servizi per la Mobilità, poi selezionalo qui. Il file viene elaborato nel browser: questa demo non lo carica su un server.</p>
+<a class="button" href="https://romamobilita.it/sistemi-e-tecnologie/open-data/" target="_blank" rel="noopener">Apri fonte ufficiale ↗</a>
+<p class="small">Nella pagina cerca “rome_static_gtfs.zip”. Il file può essere grande: attendi il completamento del download.</p>
+<label for="gtfsfile">File GTFS ZIP</label><input id="gtfsfile" type="file" accept=".zip,application/zip">
+<div id="status" class="status">In attesa del file GTFS.</div>
+</section>
+<section class="card">
+<h2>2 · Scegli la linea</h2>
+<label for="search">Cerca numero o nome della linea</label><input id="search" type="search" placeholder="Es. 64, 170, nome linea" disabled>
+<label for="route">Linea</label><select id="route" disabled><option>Prima carica il GTFS</option></select>
+<label for="direction">Direzione / percorso</label><select id="direction" disabled><option>Seleziona una linea</option></select>
+<div class="row"><button id="show" disabled>Mostra percorso</button><button id="reset" class="secondary">Azzera</button></div>
+</section>
+<section class="card">
+<div class="row" style="align-items:center"><h2 style="flex:2">3 · Mappa e fermate</h2><span id="count" class="pill">0 fermate</span></div>
+<div id="map"></div>
+<div id="result" class="status">Carica il GTFS e seleziona una linea.</div>
+<ol id="stops"></ol>
+</section>
+<section class="card">
+<h2>4 · Guida GPS e avvisi vocali</h2>
+<p>Seleziona prima una linea e premi “Mostra percorso”. Poi avvia la guida: BusPilot userà il GPS del telefono per stimare la distanza dalla prossima fermata e annunciarla a voce. Tieni la pagina aperta e consenti l'accesso alla posizione.</p>
+<div class="row">
+<button id="startGuide" disabled>Avvia guida GPS</button>
+<button id="stopGuide" class="secondary" disabled>Ferma guida</button>
+</div>
+<div id="gpsStatus" class="status">La guida GPS è ferma.</div>
+<div class="card" style="margin:8px 0 0;background:#0b1422">
+<div class="small">PROSSIMA FERMATA</div>
+<div id="nextStopName" style="font-size:20px;font-weight:800;margin:5px 0">—</div>
+<div id="nextStopDistance" style="color:#8bc9ff;font-size:15px">In attesa di avviare la guida</div>
+</div>
+<div class="row" style="margin-top:10px">
+<button id="testVoice" class="secondary">Prova annuncio vocale</button>
+<button id="nextManual" class="secondary" disabled>Prossima fermata →</button>
+</div>
+<p class="small">Gli annunci automatici vengono tentati a circa 300 m e 100 m. La precisione dipende dal GPS, dalla posizione delle fermate e dalle condizioni del telefono.</p>
+</section>
+<section class="card">
+<h2>Limiti della demo</h2>
+<p>Questa versione visualizza il percorso programmato e le fermate. Non fornisce ancora istruzioni vocali svolta-per-svolta, avvisi in tempo reale, verifica delle limitazioni per autobus o garanzia di copertura completa. Non usarla per guidare un autobus in servizio.</p>
+</section>
+</main>
+<footer>BusPilot è un prototipo indipendente e non è affiliato a Roma Servizi per la Mobilità o agli operatori TPL. Dati e mappa dipendono dalle rispettive fonti e condizioni d'uso. Mappa © OpenStreetMap contributors.</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const map=L.map('map').setView([41.9028,12.4964],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+let db={routes:[],trips:[],stops:[],stopTimes:[],shapes:[]},layers=[];
+let activeStops=[], gpsWatch=null, nextIdx=0, lastAnnouncement={}, lastPosition=null, guideRunning=false;
+function clearLayers(){layers.forEach(x=>map.removeLayer(x));layers=[];$('stops').innerHTML='';$('count').textContent='0 fermate';}
+function parseCSV(s){
+ const rows=[];let row=[],field='',q=false;
+ for(let i=0;i<s.length;i++){let c=s[i];
+  if(c==='"'&&q&&s[i+1]==='"'){field+='"';i++}
+  else if(c==='"')q=!q;
+  else if(c===','&&!q){row.push(field);field=''}
+  else if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&s[i+1]==='\n')i++;row.push(field);if(row.some(v=>v!==''))rows.push(row);row=[];field=''}
+  else field+=c;
+ }
+ if(field!==''||row.length){row.push(field);rows.push(row)}
+ const headers=(rows.shift()||[]).map(x=>x.replace(/^\uFEFF/,''));
+ return rows.map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]??''])));
+}
+async function readText(zip,name){const f=Object.values(zip.files).find(x=>!x.dir&&x.name.split('/').pop()===name);return f?await f.async('string'):''}
+function sayStatus(t,kind=''){ $('status').textContent=t;$('status').className='status '+kind; }
+function routeLabel(r){return [r.route_short_name,r.route_long_name].filter(Boolean).join(' — ')||r.route_id}
+function loadRouteOptions(filter=''){
+ const s=filter.toLowerCase();
+ const arr=db.routes.filter(r=>(routeLabel(r)+' '+r.route_id).toLowerCase().includes(s)).sort((a,b)=>routeLabel(a).localeCompare(routeLabel(b),'it',{numeric:true}));
+ const sel=$('route');sel.innerHTML='';
+ arr.forEach(r=>{const o=document.createElement('option');o.value=r.route_id;o.textContent=routeLabel(r);sel.appendChild(o)});
+ if(!arr.length){sel.innerHTML='<option value="">Nessuna linea trovata</option>'}
+ sel.disabled=!arr.length;updateDirections();
+}
+function updateDirections(){
+ const rid=$('route').value;const ts=db.trips.filter(t=>t.route_id===rid);
+ const seen=new Set(),dirs=[];
+ ts.forEach(t=>{const key=(t.direction_id||'')+'|'+(t.trip_headsign||'')+'|'+(t.shape_id||'');if(!seen.has(key)){seen.add(key);dirs.push({trip:t,label:(t.trip_headsign||'Direzione '+(t.direction_id||'non specificata'))+(t.direction_id!==''?' · dir. '+t.direction_id:'')})}});
+ const sel=$('direction');sel.innerHTML='';
+ dirs.slice(0,300).forEach((d,i)=>{const o=document.createElement('option');o.value=d.trip.trip_id;o.textContent=d.label;sel.appendChild(o)});
+ sel.disabled=!dirs.length;$('show').disabled=!dirs.length;
+}
+$('gtfsfile').addEventListener('change',async e=>{
+ const file=e.target.files[0];if(!file)return;
+ try{
+  sayStatus('Lettura del file ZIP… può richiedere un po’ di tempo.');
+  const zip=await JSZip.loadAsync(file);
+  sayStatus('Importazione di linee, fermate e tracciati…');
+  const names=['routes.txt','trips.txt','stops.txt','stop_times.txt','shapes.txt'];
+  const data={};for(const n of names){const txt=await readText(zip,n);data[n]=txt?parseCSV(txt):[]}
+  if(!data['routes.txt'].length||!data['trips.txt'].length||!data['stops.txt'].length){throw new Error('Nel file mancano uno o più file GTFS necessari (routes.txt, trips.txt, stops.txt).')}
+  db.routes=data['routes.txt'];db.trips=data['trips.txt'];db.stops=data['stops.txt'];db.stopTimes=data['stop_times.txt'];db.shapes=data['shapes.txt'];
+  $('search').disabled=false;$('search').value='';loadRouteOptions();
+  sayStatus(`Import completato: ${db.routes.length} linee, ${db.stops.length} fermate, ${db.trips.length} viaggi programmati.`, 'ok');
+  $('result').textContent='Ora scegli una linea e una direzione.';
+ }catch(err){sayStatus('Errore: '+err.message,'err')}
+});
+$('search').addEventListener('input',()=>loadRouteOptions($('search').value));
+$('route').addEventListener('change',updateDirections);
+$('show').addEventListener('click',()=>{
+ clearLayers();const trip=db.trips.find(t=>t.trip_id===$('direction').value);if(!trip)return;
+ const shape=db.shapes.filter(s=>s.shape_id===trip.shape_id).sort((a,b)=>Number(a.shape_pt_sequence)-Number(b.shape_pt_sequence));
+ const coords=shape.map(s=>[Number(s.shape_pt_lat),Number(s.shape_pt_lon)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1])&&p[0]&&p[1]);
+ if(coords.length>1){const line=L.polyline(coords,{color:'#1688ff',weight:5,opacity:.9}).addTo(map);layers.push(line);map.fitBounds(line.getBounds().pad(.12))}
+ const times=db.stopTimes.filter(s=>s.trip_id===trip.trip_id).sort((a,b)=>Number(a.stop_sequence)-Number(b.stop_sequence));
+ const stopMap=new Map(db.stops.map(s=>[s.stop_id,s]));const points=[];
+ times.forEach(t=>{const s=stopMap.get(t.stop_id);if(!s)return;const lat=Number(s.stop_lat),lon=Number(s.stop_lon);if(!lat||!lon)return;points.push({s,t,lat,lon})});
+ points.forEach((p,i)=>{const marker=L.circleMarker([p.lat,p.lon],{radius:i===0||i===points.length-1?6:4,color:'#fff',weight:1,fillColor:i===0||i===points.length-1?'#ff9d42':'#1688ff',fillOpacity:1}).bindPopup(`<b>${i+1}. ${esc(p.s.stop_name||p.s.stop_id)}</b><br>${esc(p.t.arrival_time||'Orario non disponibile')}`).addTo(map);layers.push(marker);const li=document.createElement('li');li.textContent=(p.s.stop_name||p.s.stop_id)+(p.t.arrival_time?' · '+p.t.arrival_time:'');$('stops').appendChild(li)});
+ if(coords.length<=1&&points.length){map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])).pad(.12));}
+ $('count').textContent=points.length+' fermate';
+ $('result').textContent=`Linea ${routeLabel(db.routes.find(r=>r.route_id===trip.route_id)||{})}: ${coords.length?'tracciato cartografico caricato':'tracciato geometrico non disponibile nel feed per questo viaggio'}. ${points.length} fermate associate al viaggio selezionato.`;
+ if(!points.length)$('result').textContent+=' Nessuna fermata associata trovata.';
+ activeStops=points.map(p=>({name:p.s.stop_name||p.s.stop_id,lat:p.lat,lon:p.lon,time:p.t.arrival_time||''}));
+ nextIdx=0;lastAnnouncement={};lastPosition=null;
+ $('startGuide').disabled=!activeStops.length;
+ $('nextManual').disabled=!activeStops.length;
+ $('nextStopName').textContent=activeStops[0]?.name||'Nessuna fermata disponibile';
+ $('nextStopDistance').textContent=activeStops.length?'Avvia la guida GPS per calcolare la distanza':'Seleziona un viaggio con fermate valide';
+});
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function distanceMeters(a,b){
+ const R=6371000,rad=x=>x*Math.PI/180;
+ const dLat=rad(b.lat-a.lat),dLon=rad(b.lon-a.lon);
+ const q=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));
+}
+function speak(text){
+ $('gpsStatus').textContent=text;
+ if('speechSynthesis' in window){
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);u.lang='it-IT';u.rate=0.92;
+  window.speechSynthesis.speak(u);
+ }
+}
+function announceOnce(key,text){
+ if(lastAnnouncement[key])return;
+ lastAnnouncement[key]=true;speak(text);
+}
+function updateNextStop(pos){
+ if(!activeStops.length)return;
+ const here={lat:pos.coords.latitude,lon:pos.coords.longitude};
+ // Advance sequentially once the bus is close enough to the current target stop.
+ while(nextIdx<activeStops.length-1 && distanceMeters(here,activeStops[nextIdx])<55){nextIdx++;}
+ const stop=activeStops[nextIdx], d=Math.round(distanceMeters(here,stop));
+ $('nextStopName').textContent=stop.name;
+ $('nextStopDistance').textContent=d<1000?`Circa ${d} metri`:`Circa ${(d/1000).toFixed(1)} km`;
+ if(d<=300 && d>100)announceOnce(nextIdx+'-300',`Tra circa ${Math.round(d/50)*50} metri, prossima fermata: ${stop.name}.`);
+ if(d<=100)announceOnce(nextIdx+'-100',`Stai arrivando alla fermata: ${stop.name}.`);
+ if(d<35 && nextIdx===activeStops.length-1){
+  $('gpsStatus').textContent='Sei vicino all’ultima fermata del viaggio selezionato.';
+ }
+ if(lastPosition){
+  const moved=distanceMeters(here,lastPosition);
+  if(moved>8){ /* position update is meaningful */ }
+ }
+ lastPosition=here;
+ if(pos.coords.latitude && pos.coords.longitude)map.panTo([here.lat,here.lon],{animate:true,duration:.3});
+}
+$('startGuide').addEventListener('click',()=>{
+ if(!activeStops.length){$('gpsStatus').textContent='Prima carica il GTFS e mostra una linea.';return}
+ if(!('geolocation' in navigator)){$('gpsStatus').textContent='Questo browser non supporta il GPS.';return}
+ if(!window.isSecureContext && location.hostname!=='localhost'){$('gpsStatus').textContent='Per usare il GPS, apri BusPilot tramite un sito HTTPS.';return}
+ navigator.geolocation.getCurrentPosition(pos=>{
+  guideRunning=true;$('startGuide').disabled=true;$('stopGuide').disabled=false;
+  $('gpsStatus').textContent='GPS attivo. BusPilot sta cercando la prossima fermata.';
+  updateNextStop(pos);
+  gpsWatch=navigator.geolocation.watchPosition(updateNextStop,err=>{
+   $('gpsStatus').textContent='Errore GPS: '+err.message+'. Controlla i permessi di posizione.';
+  },{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+  speak('Guida BusPilot avviata. Prossima fermata: '+activeStops[nextIdx].name+'.');
+ },err=>{$('gpsStatus').textContent='Impossibile accedere al GPS: '+err.message+'. Consenti la posizione nelle impostazioni di Safari.';},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+});
+$('stopGuide').addEventListener('click',()=>{
+ if(gpsWatch!==null)navigator.geolocation.clearWatch(gpsWatch);
+ gpsWatch=null;guideRunning=false;$('startGuide').disabled=!activeStops.length;$('stopGuide').disabled=true;
+ if('speechSynthesis' in window)window.speechSynthesis.cancel();
+ $('gpsStatus').textContent='Guida GPS ferma.';
+});
+$('testVoice').addEventListener('click',()=>{
+ const name=activeStops[nextIdx]?.name||'fermata di prova';
+ if(!('speechSynthesis' in window)){$('gpsStatus').textContent='La sintesi vocale non è disponibile in questo browser.';return}
+ speak('BusPilot. Prossima fermata: '+name+'.');
+});
+$('nextManual').addEventListener('click',()=>{
+ if(!activeStops.length)return;
+ nextIdx=Math.min(nextIdx+1,activeStops.length-1);lastAnnouncement={};
+ $('nextStopName').textContent=activeStops[nextIdx].name;
+ $('nextStopDistance').textContent='Fermata selezionata manualmente';
+ speak('Prossima fermata: '+activeStops[nextIdx].name+'.');
+});
+$('reset').addEventListener('click',()=>{
+ if(gpsWatch!==null)navigator.geolocation.clearWatch(gpsWatch);
+ gpsWatch=null;guideRunning=false;activeStops=[];nextIdx=0;lastAnnouncement={};
+ clearLayers();$('result').textContent='Carica il GTFS e seleziona una linea.';
+ $('gpsStatus').textContent='La guida GPS è ferma.';$('startGuide').disabled=true;$('stopGuide').disabled=true;$('nextManual').disabled=true;
+ $('nextStopName').textContent='—';$('nextStopDistance').textContent='In attesa di avviare la guida';
+ map.setView([41.9028,12.4964],11)
+});
+</script>
+</body>
+</html>
